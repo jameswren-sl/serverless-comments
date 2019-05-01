@@ -1,0 +1,414 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Resources": {
+    "usersTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "userId",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "userId",
+            "KeyType": "HASH"
+          }
+        ],
+        "TableName": "blogUsers",
+        "ProvisionedThroughput": {
+          "ReadCapacityUnits": 1,
+          "WriteCapacityUnits": 1
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "blogUsers"
+          },
+          {
+            "Key": "Project",
+            "Value": "blog-comments"
+          }
+        ]
+      }
+    },
+    "blogsTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "blogId",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "blogId",
+            "KeyType": "HASH"
+          }
+        ],
+        "TableName": "blogs",
+        "ProvisionedThroughput": {
+          "ReadCapacityUnits": 1,
+          "WriteCapacityUnits": 1
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "blogs"
+          },
+          {
+            "Key": "Project",
+            "Value": "blog-comments"
+          }
+        ]
+      }
+    },
+    "commentsTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "blogId",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "posted",
+            "AttributeType": "N"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "blogId",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "posted",
+            "KeyType": "RANGE"
+          }
+        ],
+        "TableName": "blogComments",
+        "ProvisionedThroughput": {
+          "ReadCapacityUnits": 1,
+          "WriteCapacityUnits": 1
+        },
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "blogComments"
+          },
+          {
+            "Key": "Project",
+            "Value": "blog-comments"
+          }
+        ]
+      }
+    },
+    "appsync": {
+      "Type": "AWS::AppSync::GraphQLApi",
+      "Properties": {
+        "Name": "Blog Comments",
+        "AuthenticationType": "API_KEY"
+      }
+    },
+    "apiKey": {
+      "Type" : "AWS::AppSync::ApiKey",
+      "Properties" : {
+        "Expires" : 1577840461,
+        "ApiId" : {"Fn::GetAtt" : ["appsync", "ApiId"] }
+      }
+    },
+    "blogDynamoRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "appsync.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "blogDynamoRole",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:GetItem",
+                    "dynamodb:PutItem",
+                    "dynamodb:Query",
+                    "dynamodb:Scan"
+                  ],
+                  "Resource": [
+                      {"Fn::GetAtt" : ["usersTable", "Arn"] },
+                      {"Fn::GetAtt" : ["blogsTable", "Arn"] },
+                      {"Fn::GetAtt" : ["commentsTable", "Arn"] }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "usersDataSource": {
+      "Type": "AWS::AppSync::DataSource",
+      "Properties": {
+        "Type": "AMAZON_DYNAMODB",
+        "ServiceRoleArn":
+          {"Fn::GetAtt" : ["blogDynamoRole", "Arn"] },
+        "ApiId": {"Fn::GetAtt" : ["appsync", "ApiId"] },
+        "Name": "usersTable",
+        "DynamoDBConfig": {
+          "TableName": "blogUsers",
+          "AwsRegion": { "Ref" : "AWS::Region" }
+        }
+      }
+    },
+    "blogsDataSource": {
+      "Type": "AWS::AppSync::DataSource",
+      "Properties": {
+        "Type": "AMAZON_DYNAMODB",
+        "ServiceRoleArn":
+          {"Fn::GetAtt" : ["blogDynamoRole", "Arn"] },
+        "ApiId": {"Fn::GetAtt" : ["appsync", "ApiId"] },
+        "Name": "blogsTable",
+        "DynamoDBConfig": {
+          "TableName": "blogs",
+          "AwsRegion": { "Ref" : "AWS::Region" }
+        }
+      }
+    },
+    "commentsDataSource": {
+      "Type": "AWS::AppSync::DataSource",
+      "Properties": {
+        "Type": "AMAZON_DYNAMODB",
+        "ServiceRoleArn": {"Fn::GetAtt" : ["blogDynamoRole", "Arn"] },  
+        "ApiId": {"Fn::GetAtt" : ["appsync", "ApiId"] },
+        "Name": "commentsTable",
+        "DynamoDBConfig": {
+          "TableName": "blogComments",
+          "AwsRegion": { "Ref" : "AWS::Region" }
+        }
+      }
+    },
+    "schema": {
+      "Type": "AWS::AppSync::GraphQLSchema",
+      "Properties": {
+        "ApiId": {"Fn::GetAtt" : ["appsync", "ApiId"] },
+        "Definition": { "Fn::Join": [ "\n", [
+          "schema {",
+            "  query: Query",
+            "  mutation: Mutation",
+            "  subscription: Subscription",
+            "}",
+            "type User {",
+            "  userId: String",
+            "  username: String!",
+            "}",
+            "type Blog {",
+            "  blogId: String!",
+            "  comments: [Comment]",
+            "}",
+            "type Comment {",
+            "  commentId:  String,",
+            "  blogId: String!,",
+            "  posted: String!,",
+            "  userId: String!,",
+            "  message: String!",
+            "}",
+            "type UserConnection {",
+            "  items: [User]",
+            "  nextToken: String",
+            "}",
+            "type Mutation {",
+            "  createUser(username: String!): User",
+            "  createBlog(blogId: String!): Blog",
+            "  postComment(userId: String!, blogId: String!, message: String!): Comment",
+            "}",
+            "type Query {",
+            "  listUsers(limit: Int, nextToken: String): UserConnection",
+            "  getBlog(blogId: String!): Blog",
+            "}",
+            "type Subscription {",
+            "  onCreateUser: User @aws_subscribe(mutations : [\"createUser\"])",
+            "  onPostComment(blogId: String!): Comment @aws_subscribe(mutations : [\"postComment\"])",
+            "}"
+        ] ] }
+      }
+    },
+    "createUserResolver": {
+      "Type": "AWS::AppSync::Resolver",
+      "Properties": {
+        "ApiId": {"Fn::GetAtt" : ["appsync", "ApiId"] },
+        "TypeName": "Mutation",
+        "FieldName": "createUser",
+        "DataSourceName": {"Fn::GetAtt" : ["usersDataSource", "Name"] },
+        "RequestMappingTemplate": { "Fn::Join": [ "\n", [
+          "{",
+            "    \"version\" : \"2017-02-28\",",
+            "    \"operation\" : \"PutItem\",",
+            "    \"key\" : {",
+            "        \"userId\": $util.dynamodb.toDynamoDBJson($util.autoId()),",
+            "    },",
+            "    \"attributeValues\" : $util.dynamodb.toMapValuesJson($ctx.args),",
+            "    \"condition\": {",
+            "      \"expression\": \"attribute_not_exists(#username)\",",
+            "      \"expressionNames\": {",
+            "         \"#username\": \"username\"",
+            "       }",
+            "    },",
+            "}"
+          ]]
+        },
+        "ResponseMappingTemplate": "$util.toJson($ctx.result)"
+      }
+    },
+    "createBlogResolver": {
+      "Type": "AWS::AppSync::Resolver",
+      "Properties": {
+        "ApiId": {"Fn::GetAtt" : ["appsync", "ApiId"] },
+        "TypeName": "Mutation",
+        "FieldName": "createBlog",
+        "DataSourceName": {"Fn::GetAtt" : ["blogsDataSource", "Name"] },
+        "RequestMappingTemplate": { "Fn::Join": [ "\n", [
+          "{",
+            "    \"version\" : \"2017-02-28\",",
+            "    \"operation\" : \"PutItem\",",
+            "    \"key\" : {",
+            "        \"blogId\": $util.dynamodb.toDynamoDBJson($ctx.args.blogId),",
+            "    },",
+            "    \"attributeValues\" : $util.dynamodb.toMapValuesJson($ctx.args),",
+            "    \"condition\": {",
+            "      \"expression\": \"attribute_not_exists(#blogId)\",",
+            "      \"expressionNames\": {",
+            "         \"#blogId\": \"blogId\"",
+            "       }",
+            "    },",
+            "}"
+          ]]
+        },
+        "ResponseMappingTemplate": "$util.toJson($ctx.result)"
+      }
+    },
+    "postCommentResolver": {
+      "Type": "AWS::AppSync::Resolver",
+      "Properties": {
+        "ApiId": {"Fn::GetAtt" : ["appsync", "ApiId"] },
+        "TypeName": "Mutation",
+        "FieldName": "postComment",
+        "DataSourceName": {"Fn::GetAtt" : ["commentsDataSource", "Name"] },
+        "RequestMappingTemplate": { "Fn::Join": [ "\n", [
+          "{",
+          "  \"version\": \"2017-02-28\",",
+          "  \"operation\": \"PutItem\",",
+          "  \"key\": {",
+          "    \"blogId\": $util.dynamodb.toDynamoDBJson($ctx.args.blogId),",
+          "    \"posted\": $util.dynamodb.toDynamoDBJson($util.time.nowEpochMilliSeconds())",
+          "  },",
+          "  \"attributeValues\": {",
+          "  \"commentId\": $util.dynamodb.toDynamoDBJson($util.autoId()),",
+          "    \"userId\": $util.dynamodb.toDynamoDBJson($ctx.args.userId),",
+          "    \"message\": $util.dynamodb.toDynamoDBJson($ctx.args.message)",
+          "  },",
+          "  \"condition\": {",
+          "    \"expression\": \"attribute_not_exists(#blogId) AND attribute_not_exists(#posted)\",",
+          "    \"expressionNames\": {",
+          "      \"#blogId\": \"blogId\",",
+          "      \"#posted\": \"posted\"",
+          "    },",
+          "  },",
+          "}"
+          ]]
+        },
+        "ResponseMappingTemplate": "$util.toJson($ctx.result)"
+      }
+    },
+    "listUsersResolver": {
+      "Type": "AWS::AppSync::Resolver",
+      "Properties": {
+        "ApiId": {"Fn::GetAtt" : ["appsync", "ApiId"] },
+        "TypeName": "Query",
+        "FieldName": "listUsers",
+        "DataSourceName": {"Fn::GetAtt" : ["usersDataSource", "Name"] },
+        "RequestMappingTemplate": { "Fn::Join": [ "\n", [
+            "{",
+            "  \"version\": \"2017-02-28\",",
+            "  \"operation\": \"Scan\",",
+            "  \"filter\": null,",
+            "  \"limit\": $util.defaultIfNull($ctx.args.limit, 20),",
+            "  \"nextToken\": $util.toJson($util.defaultIfNullOrEmpty($ctx.args.nextToken, null)),",
+            "}"
+          ]]
+        },
+        "ResponseMappingTemplate": "$util.toJson($ctx.result)"
+      }
+    },
+    "getBlogResolver": {
+      "Type": "AWS::AppSync::Resolver",
+      "Properties": {
+        "ApiId": {"Fn::GetAtt" : ["appsync", "ApiId"] },
+        "TypeName": "Query",
+        "FieldName": "getBlog",
+        "DataSourceName": {"Fn::GetAtt" : ["blogsDataSource", "Name"] },
+        "RequestMappingTemplate": { "Fn::Join": [ "\n", [
+            "{",
+            "  \"version\": \"2017-02-28\",",
+            "  \"operation\": \"GetItem\",",
+            "  \"key\": {",
+            "    \"blogId\": $util.dynamodb.toDynamoDBJson($ctx.args.blogId),",
+            "  },",
+            "}"
+          ]]
+        },
+        "ResponseMappingTemplate": "$util.toJson($ctx.result)"
+      }
+    },
+    "getCommentsResolver": {
+      "Type": "AWS::AppSync::Resolver",
+      "Properties": {
+        "ApiId": {"Fn::GetAtt" : ["appsync", "ApiId"] },
+        "TypeName": "Blog",
+        "FieldName": "comments",
+        "DataSourceName": {"Fn::GetAtt" : ["commentsDataSource", "Name"] },
+        "RequestMappingTemplate": { "Fn::Join": [ "\n", [
+           "{",
+            "  \"version\": \"2017-02-28\",",
+            "  \"operation\": \"Scan\",",
+            "  \"filter\": {",
+            "     \"expression\": \"blogId = :blogId\",",
+            "     \"expressionValues\" : {",
+            "       \":blogId\": {",
+            "         \"S\": \"${ctx.source.blogId}\"",
+            "       }",
+            "      }",
+            "   }",
+            "}"
+          ]]
+        },
+        "ResponseMappingTemplate": "$util.toJson($ctx.result.items)"
+      }
+    }
+  },
+  "Outputs": {
+    "appsyncUrl" :{
+      "Value": { "Fn::GetAtt" : [ "appsync", "GraphQLUrl" ]}
+    },
+    "apiKey": {
+      "Value": { "Fn::GetAtt" : [ "apiKey", "ApiKey" ]}
+    }
+  }
+}
